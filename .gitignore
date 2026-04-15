@@ -1,0 +1,12 @@
+# Virtual environment
+.venv/
+
+# Python cache files (created automatically when you run the script)
+__pycache__/
+*.pyc
+
+# macOS junk
+.DS_Store
+
+# Generated output (the script creates these, no need to track them)
+briefs/
