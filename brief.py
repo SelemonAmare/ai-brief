@@ -93,25 +93,36 @@ def filter_recent(items, hours=LOOKBACK_HOURS):
 def deduplicate(items):
     """Remove near-duplicate stories.
 
-    Two items are considered duplicates when their titles share 4+ words in
-    common (case-insensitive). We keep the first occurrence (earliest source).
+    Two items are considered duplicates when their titles share enough keywords
+    in common (case-insensitive). We keep the first occurrence (earliest source).
+
+    Instead of a fixed word count, we use a ratio: if the overlap covers more
+    than half of the shorter title's keywords, it's a duplicate. This handles
+    short titles like "HY-World 2.0 released" vs "HY-World 2.0 just dropped"
+    that a fixed threshold of 4 would miss.
     """
-    # Small helper: return the significant words in a title
     STOP = {"a", "an", "the", "in", "on", "at", "to", "for", "of", "and",
-            "or", "is", "are", "with", "how", "why", "what", "new", "this"}
+            "or", "is", "are", "with", "how", "why", "what", "new", "this",
+            "just", "now", "its", "can", "from", "has", "was", "but", "not"}
 
     def keywords(title):
         return {w.lower().strip("\"'.,!?:;") for w in title.split()
                 if w.lower() not in STOP and len(w) > 2}
+
+    def is_duplicate(kw, kept):
+        overlap = len(kw & kept)
+        min_len = min(len(kw), len(kept))
+        if min_len == 0:
+            return False
+        # Duplicate if overlap is at least 2 words AND covers >50% of the shorter title
+        return overlap >= 2 and (overlap / min_len) >= 0.5
 
     seen = []      # list of keyword sets for items we've kept
     unique = []
 
     for item in items:
         kw = keywords(item["title"])
-        # Check overlap with every kept item
-        is_dup = any(len(kw & kept) >= 4 for kept in seen)
-        if not is_dup:
+        if not any(is_duplicate(kw, kept) for kept in seen):
             seen.append(kw)
             unique.append(item)
 
