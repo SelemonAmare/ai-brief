@@ -10,3 +10,4 @@ __pycache__/
 
 # Generated output (the script creates these, no need to track them)
 briefs/
+brief.log

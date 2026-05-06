@@ -2,13 +2,14 @@ import feedparser
 import urllib.request
 import json
 import os
+import time
 from datetime import datetime, timezone, timedelta
 
 # --- Sources ---
 RSS_FEEDS = [
     {"name": "TechCrunch AI", "url": "https://techcrunch.com/category/artificial-intelligence/feed/"},
-    {"name": "The Decoder",   "url": "https://the-decoder.com/feed/"},
-    {"name": "Hacker News AI","url": "https://hnrss.org/newest?q=AI+LLM&points=10"},
+    {"name": "The Decoder", "url": "https://the-decoder.com/feed/"},
+    {"name": "Hacker News AI", "url": "https://hnrss.org/frontpage?q=AI"},
 ]
 
 REDDIT_URL = "https://www.reddit.com/r/LocalLLaMA/hot.json?limit=25"
@@ -16,11 +17,47 @@ REDDIT_URL = "https://www.reddit.com/r/LocalLLaMA/hot.json?limit=25"
 # How far back to look (in hours)
 LOOKBACK_HOURS = 24
 
+USER_AGENT = "ai-brief/1.1 (+https://github.com/SelemonAmare/ai-brief)"
+REQUEST_TIMEOUT_SECONDS = 15
+RETRY_DELAYS_SECONDS = (1, 3)
+
+
+def fetch_url(url, source_name):
+    """Fetch a URL with a small retry/backoff loop."""
+    last_error = None
+    attempts = len(RETRY_DELAYS_SECONDS) + 1
+
+    for attempt in range(1, attempts + 1):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": USER_AGENT},
+            )
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+                return response.read()
+        except Exception as e:
+            last_error = e
+            if attempt < attempts:
+                delay = RETRY_DELAYS_SECONDS[attempt - 1]
+                print(f"  {source_name}: fetch failed ({e}); retrying in {delay}s")
+                time.sleep(delay)
+
+    print(f"  Error fetching {source_name}: {last_error}")
+    return None
+
 
 def fetch_rss(feed):
     """Fetch items from a single RSS feed, return list of article dicts."""
     try:
-        parsed = feedparser.parse(feed["url"])
+        raw = fetch_url(feed["url"], feed["name"])
+        if raw is None:
+            return []
+
+        parsed = feedparser.parse(raw)
+        if parsed.bozo and not parsed.entries:
+            print(f"  Error parsing {feed['name']}: {parsed.bozo_exception}")
+            return []
+
         items = []
         for entry in parsed.entries:
             # feedparser gives us a time.struct_time in published_parsed (UTC)
@@ -45,13 +82,11 @@ def fetch_rss(feed):
 def fetch_reddit():
     """Fetch hot posts from r/LocalLLaMA using Reddit's public JSON endpoint."""
     try:
-        # Reddit blocks the default Python user-agent, so we set a custom one
-        req = urllib.request.Request(
-            REDDIT_URL,
-            headers={"User-Agent": "ai-brief/1.0"}
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read())
+        raw = fetch_url(REDDIT_URL, "r/LocalLLaMA")
+        if raw is None:
+            return []
+
+        data = json.loads(raw)
 
         items = []
         for post in data["data"]["children"]:
